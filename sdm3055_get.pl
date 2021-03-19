@@ -5,7 +5,7 @@
 #
 #        USAGE: ./sdm3055_get.pl  options
 #
-#  DESCRIPTION: read mesurements from SIGLENT SDM 3055 multimeter
+#  DESCRIPTION: read measurements from SIGLENT SDM 3055 multimeter
 #
 #      OPTIONS: ---
 # REQUIREMENTS: --- Lab::VXI11, Getopt::Long, Time::HiRes
