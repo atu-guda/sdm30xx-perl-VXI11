@@ -82,27 +82,27 @@ if( $extra_cfg ) {
 }
 
 
-my ($t0, $tc);
+my $t_0;
 
 for( my $i=0; $i<$n_read; ++$i ) {
 
-  my $t_00 = gettimeofday();
+  my $t_sti = gettimeofday();
   my @datas = $mult1->getNextDatas();
   if( !@datas ) {
     die( "Fail to get Next data  error= " . $mult1->getError()  ); # or not die?
   }
 
-  $tc = gettimeofday();
+  my $t_c = gettimeofday();
   if( $i == 0 ) {
-    $t0 = $tc;
+    $t_0 = $t_c;
   }
 
-  if( $debug > 1 ) {
-    print( STDERR "# " . ( $tc - $t_00 ) . ' ' . $mult1->getData() . "\n" );
+  if( $debug > 0 ) {
+    print( STDERR "# " . ( $t_c - $t_sti ) . ' ' . ( $t_c - $t_0 ) . ' ' . $mult1->getData() . "\n" );
   }
 
   if( $timestamp ) {
-    printf( "%-07.03g ", $tc-$t0 );
+    printf( "%-09.3f ", $t_c - $t_0 );
   }
 
   foreach my $val ( @datas ) {
@@ -110,8 +110,13 @@ for( my $i=0; $i<$n_read; ++$i ) {
   }
   print( "\n" );
 
-  if( $t_read > 0 ) { # TODO: sleep_until
-    usleep( $t_read * 1000000 );
+
+  if( $t_read > 0.01 ) {
+    my $t_next = $t_0 + ($i+1) * $t_read;
+    my $t_dlt =  1000000 * ( $t_next - $t_c ) - 23000; # approx time for "slow" measurement
+    if( $t_dlt > 0 ) {
+      usleep( $t_dlt );
+    }
   }
 }
 
