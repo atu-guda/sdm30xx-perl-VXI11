@@ -8,7 +8,7 @@
 #  DESCRIPTION: read measurements from SIGLENT SDM 3055 multimeter
 #
 #      OPTIONS: ---
-# REQUIREMENTS: --- Lab::VXI11, Getopt::Long, Time::HiRes
+# REQUIREMENTS: --- Lab::VXI11, Getopt::Long, Time::HiRes, Device::SDM3055 (local)
 #         BUGS: ---
 #        NOTES: ---
 #       AUTHOR: Anton Guda (atu)
@@ -23,8 +23,8 @@ use utf8;
 
 use Getopt::Long qw(:config no_ignore_case ); # auto_help
 use Time::HiRes qw( usleep gettimeofday );
-# use Time::HiRes::Sleep::Until;
-use Lab::VXI11;
+
+use Device::SDM3055;
 
 STDOUT->autoflush( 1 );
 
@@ -52,24 +52,6 @@ my %opts = (
     'x|extra_cfg=s'  => \$extra_cfg,
 );
 
-my %measure_name = (
-    'V'    => 'VOLT:DC ',
-    'VDC'  => 'VOLT:DC ',
-    'VAC'  => 'VOLT:AC ',
-    'VA'   => 'VOLT:AC ',
-    'R'    => 'RES ',
-    'OHM'  => 'RES ',
-    'R4'   => 'FRES ',
-    'OHM4' => 'FRES ',
-    'I'    => 'CURR:DC ',
-    'IDC'  => 'CURR:DC ',
-    'IAC'  => 'CURR:AC ',
-    'IA'   => 'CURR:AC ',
-    'F'    => 'FREQ ',
-    'HZ'   => 'FREQ ',
-    'T'    => 'PER ',
-    'PER'  => 'PER ',
-);
 
 my $opt_rc = GetOptions ( %opts );
 
@@ -78,11 +60,7 @@ if( !$opt_rc ) {
   while( my ($key,$val) = each( %opts )  ) {
     print( STDERR " -" . $key . "\n" );
   }
-  print( STDERR "Measure: " );
-  while( my ($key,$val) = each( %measure_name )  ) {
-    print( STDERR $key . ", " );
-  }
-  print( STDERR "\n" );
+  print( STDERR "Measure: " . Device::SDM3055::getMeasureNamesStr() . "\n" );
   exit(0);
 };
 
@@ -92,67 +70,26 @@ if( $debug > 0 ) {
   }
 }
 
-
-my $client = Lab::VXI11->new( $addr, DEVICE_CORE, DEVICE_CORE_VERSION, 'tcp' );
-
-if( ! defined $client ) {
-  die "cannot create client.";
-}
-
-my ( $error, $lid, $abortPort, $maxRecvSize ) = $client->create_link( 0, 0, 0, 'inst0' );
-if( $error != 0 ) {
-  die "Fail to create link, error= $error";
-}
-
-my( $reason, $data, $size );
-
-$samples = int($samples);
-
-my $cfg = "SAMP:COUNT $samples;\n";
-
-my $me_u = uc( $measure );
-
-if( defined $measure_name{$me_u} ) {
-    $measure = $measure_name{$me_u};
-}
+my $mult1 = Device::SDM3055->new( $addr );
+$mult1->{debug} = $debug;
 
 
-$cfg .= 'CONF:' . $measure;
+$mult1->setMeasure( $measure, $range );
+$mult1->setSamples( $samples );
 
-if( $range ne 'AUTO' ) {
-  $cfg .= $range;
-}
-$cfg .= ";\n";
-
-if( $debug > 0 ) {
-  print( STDERR "# cfg=\"" . $cfg . "\" me_u = \"" . $me_u . "\"\n" );
-}
 if( $extra_cfg ) {
-  $cfg .= $extra_cfg . ';\n';
+  $mult1->sendCmd( $extra_cfg );
 }
 
-( $error, $size )          = $client->device_write( $lid, $timeout, 0, 0x08, $cfg );
-if( $error != 0 ) {
-  die( "Fail to write cfg. error= $error, cfg=\"" . $cfg . "\"" );
-}
 
-my $cmd = "INIT;FETCH?";
-my $val = 0.0;
-
-my $t0;
-my $tc;
+my ($t0, $tc);
 
 for( my $i=0; $i<$n_read; ++$i ) {
 
   my $t_00 = gettimeofday();
-  ( $error, $size ) = $client->device_write( $lid, $timeout, 0, 0x08, $cmd );
-  if( $error != 0 ) {
-    die( "Fail to write cmd. error= $error, cfg=\"" . $cmd . "\"" );
-  }
-
-  ( $error, $reason, $data ) = $client->device_read( $lid, 1024, $timeout, 0, 0, 0 );
-  if( $error != 0 ) {
-    die( "Fail to read. error= $error, cfg=\"" . $cmd . "\"" );
+  my @datas = $mult1->getNextDatas();
+  if( !@datas ) {
+    die( "Fail to get Next data  error= " . $mult1->getError()  ); # or not die?
   }
 
   $tc = gettimeofday();
@@ -160,22 +97,18 @@ for( my $i=0; $i<$n_read; ++$i ) {
     $t0 = $tc;
   }
 
-  chomp $data;
   if( $debug > 1 ) {
-    print( STDERR "# " . ( $tc - $t_00 ) . ' ' . $data . "\n" );
+    print( STDERR "# " . ( $tc - $t_00 ) . ' ' . $mult1->getData() . "\n" );
   }
 
   if( $timestamp ) {
     printf( "%-07.03g ", $tc-$t0 );
   }
-  my @datas = split( ',', $data );
-  foreach my $cdat ( @datas ) {
-    $val = ( 0.0 + $cdat );
-    printf( "%-14.8g \n", $val );
-    if( $debug > 1 ) {
-      print( STDERR "# " . $cdat , "\n" );
-    }
+
+  foreach my $val ( @datas ) {
+    printf( "%-14.8g ", $val );
   }
+  print( "\n" );
 
   if( $t_read > 0 ) { # TODO: sleep_until
     usleep( $t_read * 1000000 );
@@ -183,6 +116,4 @@ for( my $i=0; $i<$n_read; ++$i ) {
 }
 
 
-$client->device_write( $lid, $timeout, 0, 0x08, "ABORT;*CLS" );
-$client->destroy_link( $lid );
 
