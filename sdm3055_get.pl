@@ -52,6 +52,25 @@ my %opts = (
     'x|extra_cfg=s'  => \$extra_cfg,
 );
 
+my %measure_name = (
+    'V'    => 'VOLT:DC ',
+    'VDC'  => 'VOLT:DC ',
+    'VAC'  => 'VOLT:AC ',
+    'VA'   => 'VOLT:AC ',
+    'R'    => 'RES ',
+    'OHM'  => 'RES ',
+    'R4'   => 'FRES ',
+    'OHM4' => 'FRES ',
+    'I'    => 'CURR:DC ',
+    'IDC'  => 'CURR:DC ',
+    'IAC'  => 'CURR:AC ',
+    'IA'   => 'CURR:AC ',
+    'F'    => 'FREQ ',
+    'HZ'   => 'FREQ ',
+    'T'    => 'PER ',
+    'PER'  => 'PER ',
+);
+
 my $opt_rc = GetOptions ( %opts );
 
 if( !$opt_rc ) {
@@ -59,6 +78,11 @@ if( !$opt_rc ) {
   while( my ($key,$val) = each( %opts )  ) {
     print( STDERR " -" . $key . "\n" );
   }
+  print( STDERR "Measure: " );
+  while( my ($key,$val) = each( %measure_name )  ) {
+    print( STDERR $key . ", " );
+  }
+  print( STDERR "\n" );
   exit(0);
 };
 
@@ -84,45 +108,12 @@ my( $reason, $data, $size );
 
 $samples = int($samples);
 
-my $cfg = "SAMP:COUNT $samples;";
-
-if( $extra_cfg ) {
-  $cfg .= $extra_cfg . ';';
-}
+my $cfg = "SAMP:COUNT $samples;\n";
 
 my $me_u = uc( $measure );
 
-
-if( $me_u eq 'V' || $me_u eq 'VDC' ) {
-    $measure = 'VOLT:DC '
-}
-
-if( $me_u eq 'VAC' || $me_u eq 'VA' ) {
-    $measure = 'VOLT:AC '
-}
-
-if( $me_u eq 'R' || $me_u eq 'OHM' ) {
-    $measure = 'RES '
-}
-
-if( $me_u eq 'R4' || $me_u eq 'OHM4' ) {
-    $measure = 'FRES '
-}
-
-if( $me_u eq 'I' || $me_u eq 'IDC' ) {
-    $measure = 'CURR:DC '
-}
-
-if( $me_u eq 'IAC' || $me_u eq 'IA' ) {
-    $measure = 'CURR:AC '
-}
-
-if( $me_u eq 'F' || $me_u eq 'Hz' ) {
-    $measure = 'FREQ '
-}
-
-if( $me_u eq 'T' ) {
-    $measure = 'PER '
+if( defined $measure_name{$me_u} ) {
+    $measure = $measure_name{$me_u};
 }
 
 
@@ -131,25 +122,25 @@ $cfg .= 'CONF:' . $measure;
 if( $range ne 'AUTO' ) {
   $cfg .= $range;
 }
+$cfg .= ";\n";
 
 if( $debug > 0 ) {
   print( STDERR "# cfg=\"" . $cfg . "\" me_u = \"" . $me_u . "\"\n" );
 }
-
-my $cmd = "INIT;FETCH?";
-my $val = 0.0;
+if( $extra_cfg ) {
+  $cfg .= $extra_cfg . ';\n';
+}
 
 ( $error, $size )          = $client->device_write( $lid, $timeout, 0, 0x08, $cfg );
 if( $error != 0 ) {
   die( "Fail to write cfg. error= $error, cfg=\"" . $cfg . "\"" );
 }
 
+my $cmd = "INIT;FETCH?";
+my $val = 0.0;
+
 my $t0;
 my $tc;
-# my $su = Time::HiRes::Sleep::Until->new;
-# my $sleep_epoch = $su->time + 60/8;
-# { $su->epoch($sleep_epoch); }
-# my $slept=$su->mark(10);
 
 for( my $i=0; $i<$n_read; ++$i ) {
 
@@ -192,6 +183,6 @@ for( my $i=0; $i<$n_read; ++$i ) {
 }
 
 
-
-($error) = $client->destroy_link( $lid );
+$client->device_write( $lid, $timeout, 0, 0x08, "ABORT;*CLS" );
+$client->destroy_link( $lid );
 
